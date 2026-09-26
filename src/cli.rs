@@ -90,6 +90,11 @@ pub struct Install {
     /// Host directory to share with the VM
     #[arg(long)]
     pub share: Option<String>,
+
+    /// Do not spawn remote-viewer; print the SPICE URI for manual connect
+    /// (headless hosts)
+    #[arg(long)]
+    pub no_viewer: bool,
 }
 
 #[derive(clap::Args)]

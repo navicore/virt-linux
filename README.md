@@ -28,6 +28,8 @@ enhancements (guest-agent IP column, hostfwd SSH, cluster docs) in
 | UEFI firmware (x86_64) | `ovmf` | `edk2-ovmf` | `edk2-ovmf` | M2 — EFI installs |
 | `qemu-img` | `qemu-utils` | `qemu-img` | `qemu-tools` | disk tooling |
 | `remote-viewer` | `virt-viewer` | `virt-viewer` | `virt-viewer` | M3 — GUI install window |
+| `bsdtar` | `libarchive-tools` | `libarchive` | `libarchive` | installer console injection |
+| `virt-customize` | `libguestfs-tools` | `libguestfs-tools` | `libguestfs-tools` | offline console-enable |
 | `virtiofsd` | `virtiofsd` | `virtiofsd` | `virtiofsd` | M4 — `--share` |
 | QEMU (aarch64, optional) | `qemu-system-arm` | `qemu-system-arm` | `qemu-system-aarch64` | cross-arch guests (TCG) |
 | AAVMF firmware (optional) | `qemu-efi-aarch64` | `edk2-aarch64` | `edk2-aarch64` | aarch64 EFI installs |
@@ -104,14 +106,26 @@ them (`--node-ip <ip> --flannel-iface <eth1>`).
 ### Install an OS from ISO
 
 ```
-virt install myvm --iso ~/Downloads/debian-13-amd64-netinst.iso
+virt install myvm --iso ~/Downloads/rocky-10-x86_64-minimal.iso
 ```
 
+**The installed system comes out console-ready automatically.** virt
+extracts the installer's kernel and initrd from the ISO and boots them
+directly with `console=ttyS0` appended; anaconda and debian-installer
+persist install-time kernel arguments into the installed bootloader,
+so `virt start` gets kernel output and a login prompt with zero
+guest-side steps. (Needs `bsdtar` on the host — `libarchive-tools`;
+`virt doctor` checks. ISOs without a recognized installer layout fall
+back to the plain EFI boot, and the installed VM then needs the
+manual console setup below.)
+
 A remote-viewer window opens showing the VM's display; install the OS
-as usual. Mismatched-architecture ISOs are rejected up front (the
-marker scan from virt-macos, including its multi-arch and
-stray-package-text handling). On headless hosts, pass `--no-viewer`
-and connect manually with the printed `spice+unix://` URI.
+as usual (the installer also logs to the serial console, harmless).
+Mismatched-architecture ISOs are rejected up front (the marker scan
+from virt-macos, including its multi-arch and stray-package-text
+handling). On headless hosts, pass `--no-viewer` and connect manually
+with the printed `spice+unix://` URI — or watch the text-mode
+installer directly on the serial console.
 
 Closing the viewer window requests a graceful guest shutdown (10s
 cap, then forced — closing mid-install is a power cut). When the guest
@@ -120,25 +134,24 @@ viewer is dismissed.
 
 ### First boot after install
 
-`virt start` on a freshly installed VM is **silent by design** on the
-EFI path: the guest's kernel logs to the VGA device, which headless
-mode does not display, and distro installers don't add
-`console=ttyS0` by default. The VM is running — check `virt list`.
-Two permanent fixes:
+`virt start` automatically enables the guest's serial console on the
+first boot of an installed VM: it runs `grubby` inside the stopped
+disk image via libguestfs (no root, no daemon — libguestfs boots its
+own tiny appliance around the disk), stamps the config, and boots.
+With `libguestfs-tools` installed, the flow is: GUI install → VM ends
+→ `virt start` → console. No guest-side steps, and the distro keeps
+managing kernels and upgrades exactly as on hardware.
 
-- **Enable the serial console in the guest** — boot the GUI once and,
-  in the guest, run
-  `grubby --update-kernel=ALL --args="console=ttyS0"`
-  (RHEL/Rocky/Fedora; on Debian/Ubuntu add `console=ttyS0` to every
-  `linux` line in `/boot/grub/grub.cfg`). systemd auto-spawns a getty
-  on any `console=` device. This is the fix — one time, and the
-  distro keeps managing kernels, GRUB, and upgrades exactly as it
-  would on hardware.
-- **Direct kernel boot (niche)** — a host-side kernel copy for when
-  you need host-controlled kernel args or sub-second console on
-  throwaway VMs. It pins the kernel at import time and must be
-  re-imported after every guest kernel upgrade; see the section
-  below.
+Manual control: `virt console-enable <vm>` (VM stopped) performs the
+same edit on demand. Without libguestfs, `virt start` prints a hint
+instead — the in-guest fallback is
+`grubby --update-kernel=ALL --args="console=ttyS0"`
+(RHEL/Rocky/Fedora; Debian/Ubuntu: edit grub.cfg).
+
+**Direct kernel boot (niche)** — a host-side kernel copy for when you
+need host-controlled kernel args or sub-second console on throwaway
+VMs. It pins the kernel at import time and must be re-imported after
+every guest kernel upgrade; see the section below.
 
 **Clipboard sharing** between the host and the Linux guest works in
 the install window once the SPICE agent runs in the guest:

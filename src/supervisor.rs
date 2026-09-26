@@ -59,9 +59,57 @@ pub(crate) fn clean_stale_runtime_files(dir: &VmDir) {
     }
 }
 
+/// How the guest firmware boots. EFI is the historical default;
+/// isoboot installs are BIOS installs (-kernel boots via SeaBIOS, so
+/// the installer writes GRUB to the MBR instead of an ESP).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Firmware {
+    Efi,
+    Bios,
+}
+
+/// Resolve a VM's firmware: explicit config wins; otherwise detect
+/// from artifacts — a per-VM NVRAM means EFI was used, an MBR boot
+/// signature on a non-GPT layout means a BIOS install.
+pub fn resolve_firmware(dir: &VmDir, config: &VmConfig) -> Firmware {
+    match config.firmware.as_deref() {
+        Some("bios") => Firmware::Bios,
+        Some("efi") | None => {
+            if dir.nvram_path().exists() {
+                Firmware::Efi
+            } else if mbr_bootable(&dir.disk_path()) {
+                Firmware::Bios
+            } else {
+                Firmware::Efi
+            }
+        }
+        _ => Firmware::Efi,
+    }
+}
+
+/// True when the disk starts with a BIOS boot sector: 0x55AA magic
+/// and a non-GPT partition table (a GPT disk's protective MBR carries
+/// a single 0xEE partition entry — that is an EFI layout, not BIOS).
+fn mbr_bootable(disk: &Path) -> bool {
+    use std::io::Read;
+    let Ok(mut file) = std::fs::File::open(disk) else {
+        return false;
+    };
+    let mut sector = [0u8; 512];
+    if file.read_exact(&mut sector).is_err() {
+        return false;
+    }
+    if sector[510] != 0x55 || sector[511] != 0xAA {
+        return false;
+    }
+    // First partition entry's type byte (offset 446 + 4).
+    sector[450] != 0xEE
+}
+
 /// Choose the boot mode: direct kernel when both files are present,
-/// EFI otherwise. A single file is a broken import — warn and fall
-/// back to EFI, exactly like virt-macos's Start.
+/// then EFI or BIOS per the VM's firmware. A single kernel file is a
+/// broken import — warn and fall back, exactly like virt-macos's
+/// Start.
 pub(crate) fn resolve_boot(dir: &VmDir, config: &VmConfig) -> Result<Boot> {
     let kernel = dir.kernel_path();
     let initrd = dir.initrd_path();
@@ -77,14 +125,18 @@ pub(crate) fn resolve_boot(dir: &VmDir, config: &VmConfig) -> Result<Boot> {
         });
     }
     if kernel.exists() != initrd.exists() {
-        eprintln!("  warning: kernel and initrd must both be present; falling back to EFI.");
+        eprintln!(
+            "  warning: kernel and initrd must both be present; falling back to firmware boot."
+        );
     }
-    resolve_efi_boot(dir, Arch::host())
+    match resolve_firmware(dir, config) {
+        Firmware::Efi => resolve_efi_boot(dir, Arch::host()),
+        Firmware::Bios => Ok(Boot::Bios),
+    }
 }
 
-/// EFI boot for GUI installs (and the headless fallback): resolves
-/// distro firmware and seeds per-VM NVRAM on first boot — the
-/// virt-macos VZEFIVariableStore equivalent.
+/// EFI boot: resolves distro firmware and seeds per-VM NVRAM on first
+/// boot — the virt-macos VZEFIVariableStore equivalent.
 pub(crate) fn resolve_efi_boot(dir: &VmDir, arch: Arch) -> Result<Boot> {
     let firmware = arch.resolve_firmware().ok_or_else(|| {
         anyhow::anyhow!(
@@ -366,14 +418,87 @@ pub fn run_headless(config: &VmConfig, dir: &VmDir, share: Option<&Path>) -> Res
     loop_result
 }
 
-/// Direct kernel boot marker for `virt start`'s banner (mirrors
-/// Start.swift's messaging).
-pub fn boot_banner(dir: &VmDir) -> String {
+/// Boot-mode banner for `virt start` (mirrors Start.swift's messaging).
+pub fn boot_banner(dir: &VmDir, config: &VmConfig) -> String {
     if dir.kernel_path().exists() && dir.initrd_path().exists() {
-        "direct kernel (console=ttyS0)".to_string()
-    } else if dir.kernel_path().exists() != dir.initrd_path().exists() {
-        "EFI/GRUB (partial kernel import — fell back)".to_string()
-    } else {
-        "EFI/GRUB (silent until the guest configures console=ttyS0)".to_string()
+        return "direct kernel (console=ttyS0)".to_string();
+    }
+    if dir.kernel_path().exists() != dir.initrd_path().exists() {
+        return "firmware boot (partial kernel import — fell back)".to_string();
+    }
+    match resolve_firmware(dir, config) {
+        Firmware::Bios => "BIOS/GRUB".to_string(),
+        Firmware::Efi => "EFI/GRUB (silent until the guest configures console=ttyS0)".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::VmConfig;
+
+    fn cfg(firmware: Option<&str>) -> VmConfig {
+        VmConfig {
+            name: "t".into(),
+            cpus: 1,
+            memory_mb: 512,
+            disk_size_gb: 1,
+            description: None,
+            mac_address: None,
+            root_device: None,
+            extra_kernel_args: None,
+            network_mode: None,
+            bridge_interface: None,
+            lan_name: None,
+            firmware: firmware.map(str::to_string),
+            console_enabled: None,
+        }
+    }
+
+    fn vmroot(tag: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!("virt-fw-test-{}-{tag}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    fn write_mbr(disk: &std::path::Path, protective: bool) {
+        let mut sector = [0u8; 512];
+        sector[510] = 0x55;
+        sector[511] = 0xAA;
+        // First partition entry type byte: 0xEE marks a GPT protective
+        // MBR (an EFI layout); anything else is a BIOS boot sector.
+        sector[450] = if protective { 0xEE } else { 0x83 };
+        std::fs::write(disk, sector).unwrap();
+    }
+
+    #[test]
+    fn firmware_explicit_config_wins() {
+        let root = vmroot("explicit");
+        let dir = VmDir {
+            name: "t".into(),
+            root: root.clone(),
+        };
+        std::fs::write(dir.nvram_path(), b"nvram").unwrap();
+        assert_eq!(resolve_firmware(&dir, &cfg(Some("bios"))), Firmware::Bios);
+        assert_eq!(resolve_firmware(&dir, &cfg(Some("efi"))), Firmware::Efi);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn firmware_detected_from_disk() {
+        let root = vmroot("detect");
+        let dir = VmDir {
+            name: "t".into(),
+            root: root.clone(),
+        };
+        write_mbr(&dir.disk_path(), false);
+        assert_eq!(resolve_firmware(&dir, &cfg(None)), Firmware::Bios);
+        write_mbr(&dir.disk_path(), true);
+        assert_eq!(resolve_firmware(&dir, &cfg(None)), Firmware::Efi);
+        std::fs::write(dir.nvram_path(), b"nvram").unwrap();
+        write_mbr(&dir.disk_path(), false);
+        assert_eq!(resolve_firmware(&dir, &cfg(None)), Firmware::Efi);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

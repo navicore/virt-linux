@@ -57,6 +57,8 @@ pub fn run(args: &Create) -> Result<()> {
             network_mode: Some(network_mode.clone()),
             bridge_interface: bridge_interface.clone(),
             lan_name: lan_name.clone(),
+            firmware: None,
+            console_enabled: None,
         };
         config.write(&dir.config_path())?;
 

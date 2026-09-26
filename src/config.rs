@@ -38,6 +38,17 @@ pub struct VmConfig {
     /// Host bridge for bridge mode (e.g. "br0"). Nil = driver default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bridge_interface: Option<String>,
+    /// "efi" (default when absent) or "bios" — recorded at install
+    /// time (isoboot installs are BIOS installs: -kernel boots via
+    /// SeaBIOS, so the installer writes GRUB to the MBR). For older
+    /// VMs without the field, resolved by inspecting the disk.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub firmware: Option<String>,
+    /// True once the guest bootloader has been given a serial console
+    /// (grubby via the offline console-enable pass). Gates the
+    /// one-time auto-enable on first `virt start`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub console_enabled: Option<bool>,
     /// VMs sharing a lan name share one virtual L2 segment (QEMU
     /// multicast-socket netdev) — the k3s-style cluster fabric.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -98,6 +109,8 @@ mod tests {
             network_mode: None,
             bridge_interface: None,
             lan_name: None,
+            firmware: None,
+            console_enabled: None,
         };
         let json = serde_json::to_string(&cfg).unwrap();
         for key in ["\"name\"", "\"cpus\"", "\"memoryMB\"", "\"diskSizeGB\""] {
@@ -122,6 +135,8 @@ mod tests {
             network_mode: None,
             bridge_interface: None,
             lan_name: None,
+            firmware: None,
+            console_enabled: None,
         };
         assert_eq!(cfg.network_display(), "nat");
         cfg.network_mode = Some("lan".into());

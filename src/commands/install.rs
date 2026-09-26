@@ -24,14 +24,39 @@ pub fn run(args: &Install) -> Result<()> {
         check_iso_architecture(iso)?;
     }
 
+    // Extract the installer kernel so we can inject `console=ttyS0`
+    // into the install itself — the installed system then has a
+    // working serial console with zero guest-side steps.
+    let installer_boot = match iso_path {
+        Some(iso) => crate::isoboot::prepare(iso, crate::qemu::arch::Arch::host(), &dir)?,
+        None => None,
+    };
+
     // Held for the life of the process; released by the kernel on death.
     let _lock = VmLock::acquire(&dir)?;
 
     let config = crate::config::VmConfig::load(&dir.config_path())?;
 
+    // The installer runs under SeaBIOS (-kernel path), so it installs
+    // GRUB to the MBR — a BIOS install. Record it so `virt start`
+    // boots the same firmware.
+    if installer_boot.is_some() && config.firmware.as_deref() != Some("bios") {
+        let mut stamped = config.clone();
+        stamped.firmware = Some("bios".into());
+        stamped.write(&dir.config_path())?;
+    }
+
     eprintln!("Booting VM '{}' with GUI...", args.name);
     if let Some(iso) = &args.iso {
         eprintln!("  ISO: {iso}");
+        match &installer_boot {
+            Some(_) => eprintln!(
+                "  Installer booted directly with console=ttyS0 — the installed system\n  will be console-ready ('virt start' works with no extra setup)."
+            ),
+            None => eprintln!(
+                "  note: installer layout not recognized — booting the ISO via EFI.\n  The installed VM will need manual console setup (see README)."
+            ),
+        }
     }
     eprintln!("  CPUs: {}, Memory: {} MB", config.cpus, config.memory_mb);
 
@@ -40,7 +65,14 @@ pub fn run(args: &Install) -> Result<()> {
     }
 
     let share = args.share.as_deref().map(Path::new);
-    installer::run_gui(&config, &dir, iso_path, !args.no_viewer, share)
+    installer::run_gui(
+        &config,
+        &dir,
+        iso_path,
+        !args.no_viewer,
+        share,
+        installer_boot,
+    )
 }
 
 /// QEMU on this host cannot run the other arch under KVM — fail fast

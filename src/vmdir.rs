@@ -78,9 +78,24 @@ impl VmDir {
         self.root.join("qga.sock")
     }
 
+    /// Serial-port capture for GUI sessions (`virt install`).
+    pub fn serial_log(&self) -> PathBuf {
+        self.root.join("serial.log")
+    }
+
     /// virtiofsd vhost-user socket (the `--share` backend).
     pub fn virtiofsd_socket(&self) -> PathBuf {
         self.root.join("virtiofsd.sock")
+    }
+
+    /// Installer kernel/initrd extracted from an install ISO
+    /// (`isoboot`). Refreshed on each `virt install --iso`.
+    pub fn installer_kernel(&self) -> PathBuf {
+        self.root.join(".install-kernel")
+    }
+
+    pub fn installer_initrd(&self) -> PathBuf {
+        self.root.join(".install-initrd")
     }
 
     pub fn exists(&self) -> bool {

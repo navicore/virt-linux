@@ -27,6 +27,32 @@ pub enum IsoArch {
     Unknown,
 }
 
+/// ISO9660 primary volume descriptor: sector 16 (2048-byte sectors),
+/// volume-id field at offset 40, 32 bytes, space-padded.
+const VD_SECTOR: u64 = 16;
+const VD_ID_OFFSET: usize = 1;
+const LABEL_OFFSET: usize = 40;
+const LABEL_LEN: usize = 32;
+
+/// The ISO's volume label, needed for RHEL-family installers to find
+/// their stage2 on the CD (`inst.stage2=hd:LABEL=...`).
+pub fn volume_label(path: &Path) -> Option<String> {
+    use std::io::{Seek, SeekFrom};
+    let mut file = File::open(path).ok()?;
+    file.seek(SeekFrom::Start(VD_SECTOR * 2048)).ok()?;
+    let mut sector = [0u8; 2048];
+    file.read_exact(&mut sector).ok()?;
+    if &sector[VD_ID_OFFSET..VD_ID_OFFSET + 5] != b"CD001" {
+        return None;
+    }
+    let label = &sector[LABEL_OFFSET..LABEL_OFFSET + LABEL_LEN];
+    Some(
+        String::from_utf8_lossy(label)
+            .trim_end_matches([' ', '\0'])
+            .to_string(),
+    )
+}
+
 const ARM64_MARKERS: [&[u8]; 4] = [
     b"BOOTAA64.EFI",
     b"bootaa64.efi",
@@ -185,5 +211,23 @@ mod tests {
         let iso = write_temp_iso(b"/EFI/BOOT/BOOTAA64.EFI;1 ... BOOTX64.EFI;1");
         assert_eq!(detect(&iso), IsoArch::Both);
         let _ = std::fs::remove_file(&iso);
+    }
+
+    /// A hand-built primary-volume-descriptor at sector 16 must yield
+    /// its label; non-ISO9660 files yield None.
+    #[test]
+    fn volume_label_parses() {
+        let mut image = vec![0u8; 17 * 2048];
+        let sector = &mut image[16 * 2048..];
+        sector[1..6].copy_from_slice(b"CD001");
+        sector[40..52].copy_from_slice(b"Rocky-10.2  ");
+        let path = std::env::temp_dir().join(format!("virt-iso-label-{}.bin", std::process::id()));
+        std::fs::write(&path, &image).unwrap();
+        assert_eq!(volume_label(&path).as_deref(), Some("Rocky-10.2"));
+        let _ = std::fs::remove_file(&path);
+
+        let junk = write_temp_iso(b"not an iso at all");
+        assert_eq!(volume_label(&junk), None);
+        let _ = std::fs::remove_file(&junk);
     }
 }

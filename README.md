@@ -2,7 +2,7 @@
 
 A CLI tool for managing Linux VMs on Linux hosts (x86_64 and aarch64)
 via QEMU/KVM. Rust sibling of
-[virt-macos](https://git.navicore.tech/navicore/virt) — same command
+[virt-macos](https://git.navicore.tech/navicore/virt-macos) — same command
 surface, same per-VM on-disk model, same UX; where virt-macos embeds
 Apple's Virtualization.framework, this tool supervises a QEMU
 subprocess per VM.

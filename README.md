@@ -7,6 +7,11 @@ surface, same per-VM on-disk model, same UX; where virt-macos embeds
 Apple's Virtualization.framework, this tool supervises a QEMU
 subprocess per VM.
 
+The binary is installed as **`virt`** — the same name as virt-macos,
+for muscle-memory parity across the two tools. VM state lives under
+`~/.virt/vms/` — the same base path and layout as virt-macos, so
+disks, kernels, and configs move between the two with plain copies.
+
 **Status: M4 complete — full command surface.** `create`, `list`,
 `set`, `delete`, `completions`, `doctor`, `start`, `stop`, `install`,
 and `kernel-import` all work. Remaining roadmap items are
@@ -51,7 +56,7 @@ Guest-side packages (installed inside VMs, documented per feature):
 - `cargo-deny` — license audit (`cargo install cargo-deny --locked`)
 - optional: `scc` and `cargo-modules` for `just stats`
 
-`virt-linux doctor` checks all runtime dependencies and prints
+`virt doctor` checks all runtime dependencies and prints
 distro-specific package names for anything missing.
 
 ## Build
@@ -79,14 +84,14 @@ truth, so local and CI can never drift.
 ## Usage
 
 ```
-virt-linux create milford --description "medium size vm with rocky 10 os" \
+virt create milford --description "medium size vm with rocky 10 os" \
   --disk 100 --cpus 4 --memory 8192
-virt-linux create k3s-a --description "k3s control plane" --disk 20 --memory 4096 \
+virt create k3s-a --description "k3s control plane" --disk 20 --memory 4096 \
   --network lan:k3s
-virt-linux list
-virt-linux set milford --description "new purpose"
-virt-linux delete milford --force
-virt-linux doctor
+virt list
+virt set milford --description "new purpose"
+virt delete milford --force
+virt doctor
 ```
 
 Networking modes: `nat` (default; private per-VM slirp with internet),
@@ -99,7 +104,7 @@ them (`--node-ip <ip> --flannel-iface <eth1>`).
 ### Install an OS from ISO
 
 ```
-virt-linux install myvm --iso ~/Downloads/debian-13-amd64-netinst.iso
+virt install myvm --iso ~/Downloads/debian-13-amd64-netinst.iso
 ```
 
 A remote-viewer window opens showing the VM's display; install the OS
@@ -124,8 +129,8 @@ systemctl enable --now spice-vdagentd
 ### Start and stop
 
 ```
-virt-linux start myvm     # headless; guest console in this terminal
-virt-linux stop myvm      # from any terminal: graceful ACPI shutdown,
+virt start myvm     # headless; guest console in this terminal
+virt stop myvm      # from any terminal: graceful ACPI shutdown,
                           # then force kill after 10s
 ```
 
@@ -143,7 +148,7 @@ Copy the kernel out of the guest during a GUI session (Debian/Ubuntu
 provide stable `/vmlinuz` and `/initrd.img` symlinks):
 
 ```
-virt-linux install myvm --share ~/vm-share
+virt install myvm --share ~/vm-share
 # inside the guest:
  mkdir -p /mnt/share
  mount -t virtiofs share /mnt/share
@@ -153,10 +158,10 @@ virt-linux install myvm --share ~/vm-share
 Then on the host:
 
 ```
-virt-linux kernel-import myvm --from ~/vm-share
+virt kernel-import myvm --from ~/vm-share
 ```
 
-`virt-linux start` detects the kernel and boots it directly. On x86_64
+`virt start` detects the kernel and boots it directly. On x86_64
 hosts bzImages import as-is; gzip/zboot arm64 wrappers are decompressed
 automatically (in-process, like virt-macos). If your root filesystem
 is not on `/dev/vda2`, pass `--root` (check with `lsblk` in the guest).
@@ -168,7 +173,7 @@ Share a host directory with the VM (`--share` works with both `start`
 and `install`; requires `virtiofsd` on the host):
 
 ```
-virt-linux start myvm --share ~/code
+virt start myvm --share ~/code
 ```
 
 Inside the VM, mount it:
@@ -187,12 +192,12 @@ share /mnt/share virtiofs defaults 0 0
 `--version` reports the version. Shell completions:
 
 ```
-source <(virt-linux completions zsh)   # also: bash, fish
+source <(virt completions zsh)   # also: bash, fish
 ```
 
 ## Layout
 
-Each VM is one directory — `~/.virt-linux/vms/<name>/` holds
+Each VM is one directory — `~/.virt/vms/<name>/` holds
 `config.json`, `disk.raw`, `nvram.bin`, and the runtime files
 (`vm.pid`, `vm.lock`, `vm.log`, `qmp.sock`, …). `virt delete` is an
 `rm -rf` of that directory; nothing else on the host is stateful.

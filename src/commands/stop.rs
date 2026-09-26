@@ -63,7 +63,7 @@ pub fn run(args: &Stop) -> Result<()> {
 fn read_pid(dir: &VmDir) -> Result<u32> {
     dir.pid().ok_or_else(|| {
         anyhow::anyhow!(
-            "VM '{}' is running but its PID file is missing or corrupt. Find it with: ps aux | grep virt-linux",
+            "VM '{}' is running but its PID file is missing or corrupt. Find it with: ps aux | grep virt",
             dir.name
         )
     })

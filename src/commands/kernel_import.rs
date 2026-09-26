@@ -34,7 +34,7 @@ pub fn run(args: &KernelImport) -> Result<()> {
     println!("  Initrd: present");
     println!("  Root:   {root}");
     println!(
-        "'virt-linux start {}' now boots directly — console output in ~1s, no GRUB setup needed.",
+        "'virt start {}' now boots directly — console output in ~1s, no GRUB setup needed.",
         args.name
     );
     Ok(())

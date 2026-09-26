@@ -39,7 +39,7 @@ pub fn run(args: &Start) -> Result<()> {
     }
     eprintln!("  Boot: {}", supervisor::boot_banner(&dir));
     eprintln!(
-        "  Console attached. Use 'virt-linux stop {}' to shut down.",
+        "  Console attached. Use 'virt stop {}' to shut down.",
         args.name
     );
 

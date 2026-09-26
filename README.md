@@ -7,9 +7,11 @@ surface, same per-VM on-disk model, same UX; where virt-macos embeds
 Apple's Virtualization.framework, this tool supervises a QEMU
 subprocess per VM.
 
-**Status: scaffold (M1).** `create`, `list`, `set`, `delete`,
-`completions`, and `doctor` work. `install`, `start`, `stop`, and
-`kernel-import` fail with pointers to the roadmap in
+**Status: M2 complete.** `create`, `list`, `set`, `delete`,
+`completions`, `doctor`, `start`, and `stop` work — VMs boot headless
+(EFI or direct kernel) with the console in your terminal and the full
+graceful-stop ladder. `install` (GUI) and `kernel-import` fail with
+pointers to the roadmap in
 [docs/design/001-architecture.md](docs/design/001-architecture.md).
 
 ## Dependencies
@@ -94,6 +96,19 @@ Networking modes: `nat` (default; private per-VM slirp with internet),
 (a QEMU multicast-socket fabric, no root needed) for k3s-style
 clusters. Give lan nodes static IPs on the second NIC and point k3s at
 them (`--node-ip <ip> --flannel-iface <eth1>`).
+
+### Start and stop
+
+```
+virt-linux start myvm     # headless; guest console in this terminal
+virt-linux stop myvm      # from any terminal: graceful ACPI shutdown,
+                          # then force kill after 10s
+```
+
+Boot mode is automatic: direct kernel when `kernel`+`initrd` are
+imported (M4), EFI/GRUB otherwise (OVMF NVRAM is seeded on first
+boot). A force-killed VM can never be orphaned — QEMU dies with its
+supervisor under any kill, including SIGKILL.
 
 `--version` reports the version. Shell completions:
 

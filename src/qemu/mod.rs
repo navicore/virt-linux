@@ -159,10 +159,9 @@ impl QemuSpec<'_> {
 
         a.push("-name".into());
         a.push(p(&self.config.name));
-        // QEMU writes its own PID into the per-VM file — same contract
-        // as virt-macos's PID file.
-        a.push("-pidfile".into());
-        a.push(pb(&self.dir.pid_path()));
+        // No -pidfile here: the SUPERVISOR writes vm.pid with its own
+        // PID (virt-macos parity — `virt stop` signals the supervisor,
+        // not QEMU; QEMU dies with the supervisor via PDEATHSIG).
         a
     }
 
@@ -352,7 +351,9 @@ mod tests {
         assert_eq!(arg(&a, "-serial"), "stdio");
         assert_eq!(arg(&a, "-display"), "none");
         assert!(has(&a, &format!("unix:{}", d.qmp_socket().display())));
-        assert!(has(&a, &d.pid_path().display().to_string()));
+        // No -pidfile: the supervisor writes vm.pid with its own PID
+        // (virt stop signals the supervisor, not QEMU).
+        assert!(!a.iter().any(|x| x == "-pidfile"));
     }
 
     #[test]

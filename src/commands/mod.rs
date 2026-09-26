@@ -6,6 +6,8 @@ pub mod delete;
 pub mod doctor;
 pub mod list;
 pub mod set;
+pub mod start;
+pub mod stop;
 pub mod stubs;
 
 use crate::cli::Command;
@@ -15,8 +17,8 @@ pub fn run(command: Command) -> Result<()> {
     match command {
         Command::Create(args) => create::run(&args),
         Command::Install(args) => stubs::install(&args.name),
-        Command::Start(args) => stubs::start(&args.name),
-        Command::Stop(args) => stubs::stop(&args.name),
+        Command::Start(args) => start::run(&args),
+        Command::Stop(args) => stop::run(&args),
         Command::Delete(args) => delete::run(&args),
         Command::List => list::run(),
         Command::Set(args) => set::run(&args),

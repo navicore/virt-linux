@@ -177,7 +177,10 @@ fn gui_mode_spice_iso_and_input() {
     assert!(has(&a, "media=cdrom,readonly=on"));
     assert!(has(
         &a,
-        &format!("unix=on,addr={}", d.spice_socket().display())
+        &format!(
+            "unix=on,addr={},disable-ticketing",
+            d.spice_socket().display()
+        )
     ));
     assert!(has(&a, "virtio-keyboard-pci"));
     assert!(has(&a, "virtio-tablet-pci"));

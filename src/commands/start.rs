@@ -38,6 +38,12 @@ pub fn run(args: &Start) -> Result<()> {
         _ => {}
     }
     eprintln!("  Boot: {}", supervisor::boot_banner(&dir));
+    if !dir.kernel_path().exists() {
+        eprintln!("        EFI boots are SILENT until the guest's kernel uses the serial");
+        eprintln!("        console. One-time fix, in the guest:");
+        eprintln!("          grubby --update-kernel=ALL --args=\"console=ttyS0\"");
+        eprintln!("          (RHEL/Rocky/Fedora; Debian/Ubuntu: edit grub.cfg)");
+    }
     eprintln!(
         "  Console attached. Use 'virt stop {}' to shut down.",
         args.name

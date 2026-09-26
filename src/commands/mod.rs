@@ -4,6 +4,7 @@ pub mod completions;
 pub mod create;
 pub mod delete;
 pub mod doctor;
+pub mod install;
 pub mod list;
 pub mod set;
 pub mod start;
@@ -16,7 +17,7 @@ use anyhow::Result;
 pub fn run(command: Command) -> Result<()> {
     match command {
         Command::Create(args) => create::run(&args),
-        Command::Install(args) => stubs::install(&args.name),
+        Command::Install(args) => install::run(&args),
         Command::Start(args) => start::run(&args),
         Command::Stop(args) => stop::run(&args),
         Command::Delete(args) => delete::run(&args),

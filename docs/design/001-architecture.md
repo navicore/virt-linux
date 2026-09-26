@@ -100,8 +100,11 @@ virt-macos). `virt doctor` reports what is actually installed.
   `system_powerdown` translation with 10s-then-SIGKILL ladder),
   minimal QMP client, EFI NVRAM seeding from the distro template on
   first boot, tty save/restore + repair-after-force-kill
-- **M3** — `virt install`: SPICE socket + remote-viewer spawn, ISO
-  attach, clipboard via spice-vdagent (documented, guest-side)
+- **M3 (done)** — `virt install`: SPICE unix socket + remote-viewer
+  spawn (with `--no-viewer` for headless hosts), ISO attach, ISO arch
+  detection (ISOCheck port incl. multi-arch and stray-text handling),
+  window-close → graceful shutdown semantics (InstallerApp parity),
+  viewer dies with supervisor (PDEATHSIG SIGTERM)
 - **M4** — `virt kernel-import` (gzip decompression like virt-macos),
   direct kernel boot, `--share` via virtiofsd
 - **M5** — guest-agent-backed IP column in `virt list`, hostfwd SSH

@@ -6,14 +6,6 @@ use anyhow::{Result, bail};
 
 const ROADMAP: &str = "docs/design/001-architecture.md";
 
-pub fn install(name: &str) -> Result<()> {
-    let _ = name;
-    bail!(
-        "'virt install' is not implemented yet (M3 — GUI install via SPICE + remote-viewer).\n\
-         See {ROADMAP}."
-    )
-}
-
 pub fn kernel_import(name: &str, from: &str, root: Option<&str>) -> Result<()> {
     let _ = (name, from, root);
     bail!(

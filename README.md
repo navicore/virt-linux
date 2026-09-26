@@ -7,11 +7,12 @@ surface, same per-VM on-disk model, same UX; where virt-macos embeds
 Apple's Virtualization.framework, this tool supervises a QEMU
 subprocess per VM.
 
-**Status: M2 complete.** `create`, `list`, `set`, `delete`,
-`completions`, `doctor`, `start`, and `stop` work — VMs boot headless
-(EFI or direct kernel) with the console in your terminal and the full
-graceful-stop ladder. `install` (GUI) and `kernel-import` fail with
-pointers to the roadmap in
+**Status: M3 complete.** `create`, `list`, `set`, `delete`,
+`completions`, `doctor`, `start`, `stop`, and `install` work — VMs
+boot headless (EFI or direct kernel) with the console in your
+terminal, and `install` opens a SPICE window (remote-viewer) for
+ISO-based OS installs. `kernel-import` fails with a pointer to the
+roadmap in
 [docs/design/001-architecture.md](docs/design/001-architecture.md).
 
 ## Dependencies
@@ -96,6 +97,31 @@ Networking modes: `nat` (default; private per-VM slirp with internet),
 (a QEMU multicast-socket fabric, no root needed) for k3s-style
 clusters. Give lan nodes static IPs on the second NIC and point k3s at
 them (`--node-ip <ip> --flannel-iface <eth1>`).
+
+### Install an OS from ISO
+
+```
+virt-linux install myvm --iso ~/Downloads/debian-13-amd64-netinst.iso
+```
+
+A remote-viewer window opens showing the VM's display; install the OS
+as usual. Mismatched-architecture ISOs are rejected up front (the
+marker scan from virt-macos, including its multi-arch and
+stray-package-text handling). On headless hosts, pass `--no-viewer`
+and connect manually with the printed `spice+unix://` URI.
+
+Closing the viewer window requests a graceful guest shutdown (10s
+cap, then forced — closing mid-install is a power cut). When the guest
+powers off from inside (install finished), the session ends and the
+viewer is dismissed.
+
+**Clipboard sharing** between the host and the Linux guest works in
+the install window once the SPICE agent runs in the guest:
+
+```
+apt install spice-vdagent
+systemctl enable --now spice-vdagentd
+```
 
 ### Start and stop
 

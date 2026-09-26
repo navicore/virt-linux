@@ -121,12 +121,15 @@ pub enum Accel {
 }
 
 impl Accel {
-    /// KVM when /dev/kvm is usable, else TCG emulation.
+    /// KVM when /dev/kvm can actually be opened by this user (QEMU's own
+    /// requirement), else TCG emulation. Stat-mode bit tests are wrong
+    /// here: a 0660 root:kvm device is usable via group membership that
+    /// never shows in the mode bits.
     pub fn detect() -> Self {
-        use std::os::unix::fs::PermissionsExt;
-        match std::fs::metadata("/dev/kvm") {
-            Ok(m) if m.permissions().mode() & 0o006 != 0 => Accel::Kvm,
-            _ => Accel::Tcg,
+        use std::fs::OpenOptions;
+        match OpenOptions::new().read(true).write(true).open("/dev/kvm") {
+            Ok(_) => Accel::Kvm,
+            Err(_) => Accel::Tcg,
         }
     }
 

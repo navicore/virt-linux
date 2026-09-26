@@ -12,17 +12,46 @@ subprocess per VM.
 `kernel-import` fail with pointers to the roadmap in
 [docs/design/001-architecture.md](docs/design/001-architecture.md).
 
-## Requirements
+## Dependencies
 
-- Rust 1.85+ (pinned via `rust-toolchain.toml`)
-- `qemu-system-x86_64` and/or `qemu-system-aarch64`
-- edk2 firmware (OVMF/AAVMF) for EFI installs
-- `/dev/kvm` for full-speed guests (TCG emulation works without it,
-  slowly — including cross-arch guests, which virt-macos cannot do)
-- `virt-viewer` (remote-viewer) for GUI installs — M3
-- `virtiofsd` for `--share` — M4
+### Runtime (host packages)
 
-`virt-linux doctor` diagnoses what is present.
+| What | Debian/Ubuntu/Pop | Fedora | Arch | Needed for |
+|---|---|---|---|---|
+| QEMU (x86_64 host) | `qemu-system-x86` | `qemu-kvm` | `qemu-system-x86_64` | M2 — running VMs |
+| UEFI firmware (x86_64) | `ovmf` | `edk2-ovmf` | `edk2-ovmf` | M2 — EFI installs |
+| `qemu-img` | `qemu-utils` | `qemu-img` | `qemu-tools` | disk tooling |
+| `remote-viewer` | `virt-viewer` | `virt-viewer` | `virt-viewer` | M3 — GUI install window |
+| `virtiofsd` | `virtiofsd` | `virtiofsd` | `virtiofsd` | M4 — `--share` |
+| QEMU (aarch64, optional) | `qemu-system-arm` | `qemu-system-arm` | `qemu-system-aarch64` | cross-arch guests (TCG) |
+| AAVMF firmware (optional) | `qemu-efi-aarch64` | `edk2-aarch64` | `edk2-aarch64` | aarch64 EFI installs |
+
+On this class of host (Pop!_OS 24.04):
+
+```
+sudo apt install qemu-system-x86 qemu-utils ovmf virt-viewer virtiofsd
+sudo usermod -aG kvm $USER   # then log out and back in
+```
+
+`/dev/kvm` access: the device is `0660 root:kvm`; membership in the
+`kvm` group enables full-speed guests. Without it, VMs still run via
+TCG emulation (slow, but works — including cross-arch, which virt-macos
+cannot do at all).
+
+Guest-side packages (installed inside VMs, documented per feature):
+`qemu-guest-agent` (IP reporting for `virt list`, M5) and
+`spice-vdagent` (clipboard in GUI mode, M3).
+
+### Development
+
+- Rust — any rustup install; the repo's `rust-toolchain.toml` pins the
+  exact toolchain (1.98.1) and components
+- `just` — recipe runner (`just ci` is the gate)
+- `cargo-deny` — license audit (`cargo install cargo-deny --locked`)
+- optional: `scc` and `cargo-modules` for `just stats`
+
+`virt-linux doctor` checks all runtime dependencies and prints
+distro-specific package names for anything missing.
 
 ## Build
 

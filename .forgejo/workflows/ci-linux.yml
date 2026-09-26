@@ -1,0 +1,50 @@
+name: CI - Linux
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+# This workflow ONLY calls `just` commands. The justfile is the source
+# of truth for all build/test/lint logic, preventing drift between
+# local development and CI.
+#
+# `runs-on: navicore-rust` targets the custom job image at
+# git.navicore.tech/navicore/navicore-forgejo-runner:latest, which has
+# Rust (via rustup, so rust-toolchain.toml pins the exact version),
+# just, and cargo-deny pre-installed.
+
+jobs:
+  ci-linux:
+    name: CI - Linux x86_64
+    runs-on: navicore-rust
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Verify toolchain
+      run: |
+        rustc --version
+        cargo --version
+        cargo clippy --version
+        just --version
+        cargo deny --version
+
+    - name: Cache cargo registry
+      uses: actions/cache@v5
+      with:
+        path: ~/.cargo/registry
+        key: linux-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo index
+      uses: actions/cache@v5
+      with:
+        path: ~/.cargo/git
+        key: linux-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+
+    # NOTE: target/ is intentionally NOT cached — stale test binaries
+    # cause false failures.
+
+    - name: Run CI checks (just ci)
+      run: just ci

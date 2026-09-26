@@ -53,10 +53,18 @@ pub(crate) fn enable(dir: &VmDir, config: &VmConfig) -> Result<bool> {
     if !output.status.success() {
         // libguestfs writes progress to stderr; surface it on failure.
         let stderr = String::from_utf8_lossy(&output.stderr);
+        let mut hint = String::new();
+        if !readable_host_kernel() {
+            hint = "\n\nthis host's /boot/vmlinuz-* is not readable by this user, so \
+                 libguestfs cannot build its appliance. One-time fix:\n  \
+                 sudo chmod a+r /boot/vmlinuz-*"
+                .to_string();
+        }
         bail!(
-            "virt-customize failed (exit {}):\n{}",
+            "virt-customize failed (exit {}):\n{}{}",
             output.status.code().unwrap_or(-1),
-            stderr.trim()
+            stderr.trim(),
+            hint
         );
     }
 
@@ -80,6 +88,18 @@ fn ensure_virt_customize() -> Result<()> {
          grubby --update-kernel=ALL --args=console=ttyS0"
     );
     Ok(())
+}
+
+/// supermin needs to read a host kernel to build libguestfs' appliance;
+/// distros with locked-down /boot (mode 0600) break it for non-root.
+fn readable_host_kernel() -> bool {
+    let Ok(entries) = std::fs::read_dir("/boot") else {
+        return false;
+    };
+    entries.flatten().any(|e| {
+        let name = e.file_name().to_string_lossy().into_owned();
+        name.starts_with("vmlinuz") && std::fs::File::open(e.path()).is_ok()
+    })
 }
 
 /// Called from `virt start`: for an installed VM that has not yet had

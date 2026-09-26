@@ -239,10 +239,25 @@ fn check_bsdtar(pkgs: &PkgNames) {
 
 fn check_libguestfs(pkgs: &PkgNames) {
     match find_in_path("virt-customize") {
-        Some(path) => println!(
-            "libguestfs:   ok ({}) - offline console-enable supported",
-            path.display()
-        ),
+        Some(path) => {
+            println!(
+                "libguestfs:   ok ({}) - offline console-enable supported",
+                path.display()
+            );
+            // supermin must read a host kernel to build the appliance.
+            let Ok(entries) = std::fs::read_dir("/boot") else {
+                return;
+            };
+            let readable = entries.flatten().any(|e| {
+                e.file_name().to_string_lossy().starts_with("vmlinuz")
+                    && std::fs::File::open(e.path()).is_ok()
+            });
+            if !readable {
+                println!(
+                    "              /boot/vmlinuz-* not readable — fix: sudo chmod a+r /boot/vmlinuz-*"
+                );
+            }
+        }
         None => println!(
             "libguestfs:   not installed - {} {} (without it, first boot needs manual console setup)",
             pkgs.manager, pkgs.libguestfs

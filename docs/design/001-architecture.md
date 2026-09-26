@@ -15,7 +15,7 @@ the porting spec; this document records what changes and why.
 
 - **No daemons** — no libvirt, no system-wide state. Each VM is one
   QEMU subprocess plus (later) one virtiofsd subprocess. Everything a
-  VM owns lives in `~/.virt-linux/vms/<name>/`
+  VM owns lives in `~/.virt/vms/<name>/`
 - **Schema parity where feature sets overlap** — `config.json` uses
   the same camelCase fields as virt-macos, plus `lanName` (new)
 - **Same lock contract** — flock on `vm.lock` held for the supervisor's

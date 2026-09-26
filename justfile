@@ -37,7 +37,7 @@ test:
 build:
     @echo "Building release binary..."
     cargo build --locked --release
-    @echo "Built: target/release/virt-linux"
+    @echo "Built: target/release/virt"
 
 # Install the release binary into ~/.cargo/bin
 install:

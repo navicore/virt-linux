@@ -1,4 +1,7 @@
-//! Per-VM on-disk layout: `~/.virt-linux/vms/<name>/`.
+//! Per-VM on-disk layout: `~/.virt/vms/<name>/` — the same base path
+//! and layout as virt-macos, so disks, kernels, and configs move
+//! between the two tools with plain copies (config.json schemas
+//! overlap; disk.raw is plain raw either way).
 //!
 //! Everything a VM owns lives in one directory — config, disk, NVRAM,
 //! runtime sockets (QMP, SPICE, guest agent), pid/lock/log files — so
@@ -16,7 +19,7 @@ pub struct VmDir {
 impl VmDir {
     pub fn base() -> PathBuf {
         let home = std::env::var("HOME").unwrap_or_default();
-        Path::new(&home).join(".virt-linux").join("vms")
+        Path::new(&home).join(".virt").join("vms")
     }
 
     pub fn new(name: &str) -> Self {

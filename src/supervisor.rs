@@ -88,7 +88,7 @@ pub(crate) fn resolve_boot(dir: &VmDir, config: &VmConfig) -> Result<Boot> {
 pub(crate) fn resolve_efi_boot(dir: &VmDir, arch: Arch) -> Result<Boot> {
     let firmware = arch.resolve_firmware().ok_or_else(|| {
         anyhow::anyhow!(
-            "no UEFI firmware found for {arch} — run 'virt-linux doctor' for the package to install"
+            "no UEFI firmware found for {arch} — run 'virt doctor' for the package to install"
         )
     })?;
     if !dir.nvram_path().exists() {
@@ -225,7 +225,7 @@ pub(crate) fn spawn_virtiofsd(dir: &VmDir, share: &Path) -> Result<Child> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             bail!(
                 "virtiofsd not found — --share requires it \
-                 (see 'virt-linux doctor' for the package)"
+                 (see 'virt doctor' for the package)"
             );
         }
         Err(e) => return Err(e).context("cannot spawn virtiofsd"),
@@ -342,7 +342,7 @@ pub fn run_headless(config: &VmConfig, dir: &VmDir, share: Option<&Path>) -> Res
     install_signal_handlers();
     eprintln!(
         "VM running. Console output appears once the guest boots.\n\
-         Use 'virt-linux stop {}' (another terminal) to shut down.",
+         Use 'virt stop {}' (another terminal) to shut down.",
         config.name
     );
     logger::log(dir, "started");

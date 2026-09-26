@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(
-    name = "virt-linux",
+    name = "virt",
     version,
     about = "Manage Linux VMs on Linux hosts via QEMU/KVM (Rust sibling of virt-macos)"
 )]

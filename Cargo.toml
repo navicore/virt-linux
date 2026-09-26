@@ -6,6 +6,12 @@ rust-version = "1.85"
 description = "Manage Linux VMs on Linux hosts via QEMU/KVM — Rust sibling of virt-macos"
 license = "MIT"
 
+# The binary is `virt` — same name as virt-macos, for muscle-memory
+# parity across the two tools.
+[[bin]]
+name = "virt"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

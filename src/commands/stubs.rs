@@ -14,22 +14,6 @@ pub fn install(name: &str) -> Result<()> {
     )
 }
 
-pub fn start(name: &str) -> Result<()> {
-    let _ = name;
-    bail!(
-        "'virt start' is not implemented yet (M2 — QEMU supervisor + QMP stop ladder).\n\
-         See {ROADMAP}."
-    )
-}
-
-pub fn stop(name: &str) -> Result<()> {
-    let _ = name;
-    bail!(
-        "'virt stop' is not implemented yet (M2 — QMP system_powerdown + force kill).\n\
-         See {ROADMAP}."
-    )
-}
-
 pub fn kernel_import(name: &str, from: &str, root: Option<&str>) -> Result<()> {
     let _ = (name, from, root);
     bail!(

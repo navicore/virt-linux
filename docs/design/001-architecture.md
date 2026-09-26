@@ -95,9 +95,11 @@ virt-macos). `virt doctor` reports what is actually installed.
 - **M1 (done)** — cargo project, CI parity (justfile + Forgejo),
   config/vmdir/lock/mac, argv builder with tests, create/list/set/
   delete/completions/doctor
-- **M2** — `virt start`/`virt stop`: QEMU supervisor, setsid + signal
-  translation, minimal QMP client, 10s powerdown-then-kill ladder,
-  EFI vars template copy on first boot
+- **M2 (done)** — `virt start`/`virt stop`: QEMU supervisor (setsid,
+  inherited stdio, PDEATHSIG orphan protection, signal → QMP
+  `system_powerdown` translation with 10s-then-SIGKILL ladder),
+  minimal QMP client, EFI NVRAM seeding from the distro template on
+  first boot, tty save/restore + repair-after-force-kill
 - **M3** — `virt install`: SPICE socket + remote-viewer spawn, ISO
   attach, clipboard via spice-vdagent (documented, guest-side)
 - **M4** — `virt kernel-import` (gzip decompression like virt-macos),

@@ -139,6 +139,7 @@ pub struct KernelImport {
     pub name: String,
 
     /// Directory containing kernel and initrd copied out of the guest
+    #[arg(long)]
     pub from: String,
 
     /// Root device for direct kernel boot (default /dev/vda2)

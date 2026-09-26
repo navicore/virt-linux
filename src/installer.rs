@@ -11,18 +11,29 @@ use crate::logger;
 use crate::qemu::arch::{Accel, Arch};
 use crate::qemu::{Display, QemuSpec};
 use crate::supervisor::{
-    StopLadder, clean_stale_runtime_files, finish_session, install_signal_handlers,
-    resolve_efi_boot, shutdown_requested, spawn_qemu,
+    StopLadder, clean_stale_runtime_files, dismiss_child, finish_session, install_signal_handlers,
+    resolve_efi_boot, shutdown_requested, spawn_qemu, spawn_virtiofsd,
 };
 use crate::vmdir::VmDir;
 use anyhow::{Context, Result, bail};
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-pub fn run_gui(config: &VmConfig, dir: &VmDir, iso: Option<&Path>, viewer: bool) -> Result<()> {
+pub fn run_gui(
+    config: &VmConfig,
+    dir: &VmDir,
+    iso: Option<&Path>,
+    viewer: bool,
+    share: Option<&Path>,
+) -> Result<()> {
     clean_stale_runtime_files(dir);
+
+    let mut vfsd = match share {
+        Some(share) => Some(spawn_virtiofsd(dir, share)?),
+        None => None,
+    };
 
     // Installs (and GUI re-entry) always use real EFI — installers
     // and GRUB need firmware, mirroring virt-macos's Install.
@@ -35,6 +46,7 @@ pub fn run_gui(config: &VmConfig, dir: &VmDir, iso: Option<&Path>, viewer: bool)
         boot,
         display: Display::Spice,
         iso,
+        share,
     };
     let argv = spec.argv();
 
@@ -69,12 +81,12 @@ pub fn run_gui(config: &VmConfig, dir: &VmDir, iso: Option<&Path>, viewer: bool)
 
     let mut ladder = StopLadder::new();
     let mut viewer_exit_noted = false;
-    loop {
+    let loop_result = loop {
         if let Some(status) = child.try_wait()? {
             eprintln!("VM stopped.");
             dismiss_viewer(viewer_child.as_mut());
             finish_session(dir, status.code());
-            break;
+            break Ok(());
         }
         // Window closed → request graceful shutdown (InstallerApp's
         // windowShouldClose veto). A crashed viewer is
@@ -92,8 +104,11 @@ pub fn run_gui(config: &VmConfig, dir: &VmDir, iso: Option<&Path>, viewer: bool)
         }
         ladder.tick(dir, &mut child);
         std::thread::sleep(Duration::from_millis(100));
+    };
+    if let Some(vfsd) = vfsd.as_mut() {
+        dismiss_child(vfsd);
     }
-    Ok(())
+    loop_result
 }
 
 /// Spawn remote-viewer against the VM's SPICE unix socket. It must die
@@ -135,17 +150,7 @@ fn spawn_viewer(uri: &str) -> Result<Child> {
 /// The guest stopped on its own (install finished, in-guest poweroff):
 /// dismiss the viewer window.
 fn dismiss_viewer(viewer: Option<&mut Child>) {
-    let Some(viewer) = viewer else { return };
-    let pid = viewer.id() as libc::pid_t;
-    unsafe { libc::kill(pid, libc::SIGTERM) };
-    let deadline = Instant::now() + Duration::from_secs(2);
-    while Instant::now() < deadline {
-        match viewer.try_wait() {
-            Ok(Some(_)) => return,
-            Ok(None) => std::thread::sleep(Duration::from_millis(100)),
-            Err(_) => return,
-        }
+    if let Some(viewer) = viewer {
+        dismiss_child(viewer);
     }
-    viewer.kill().ok();
-    let _ = viewer.wait();
 }

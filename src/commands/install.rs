@@ -35,11 +35,12 @@ pub fn run(args: &Install) -> Result<()> {
     }
     eprintln!("  CPUs: {}, Memory: {} MB", config.cpus, config.memory_mb);
 
-    if args.share.is_some() {
-        eprintln!("  note: --share is not implemented yet (M4); starting without the share.");
+    if let Some(share) = &args.share {
+        eprintln!("  Shared folder: {share} (mount in guest: mount -t virtiofs share /mnt)");
     }
 
-    installer::run_gui(&config, &dir, iso_path, !args.no_viewer)
+    let share = args.share.as_deref().map(Path::new);
+    installer::run_gui(&config, &dir, iso_path, !args.no_viewer, share)
 }
 
 /// QEMU on this host cannot run the other arch under KVM — fail fast

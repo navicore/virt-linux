@@ -43,9 +43,10 @@ pub fn run(args: &Start) -> Result<()> {
         args.name
     );
 
-    if args.share.is_some() {
-        eprintln!("  note: --share is not implemented yet (M4); starting without the share.");
+    if let Some(share) = &args.share {
+        eprintln!("  Shared folder: {share} (mount in guest: mount -t virtiofs share /mnt)");
     }
 
-    supervisor::run_headless(&config, &dir)
+    let share = args.share.as_deref().map(std::path::Path::new);
+    supervisor::run_headless(&config, &dir, share)
 }

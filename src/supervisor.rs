@@ -14,8 +14,9 @@ use crate::qemu::{Boot, Display, QemuSpec};
 use crate::qmp::Qmp;
 use crate::tty::TtyGuard;
 use crate::vmdir::VmDir;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use std::os::unix::process::CommandExt;
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -51,6 +52,7 @@ pub(crate) fn clean_stale_runtime_files(dir: &VmDir) {
         dir.qmp_socket(),
         dir.qga_socket(),
         dir.spice_socket(),
+        dir.virtiofsd_socket(),
         dir.pid_path(),
     ] {
         let _ = std::fs::remove_file(path);
@@ -182,12 +184,93 @@ impl StopLadder {
     }
 }
 
+/// Spawn the virtiofsd daemon for `--share` and wait for its socket.
+/// QEMU connects to this socket as a vhost-user client, so the daemon
+/// must be listening before QEMU starts. Dies with the supervisor
+/// (PDEATHSIG SIGKILL, like QEMU).
+pub(crate) fn spawn_virtiofsd(dir: &VmDir, share: &Path) -> Result<Child> {
+    anyhow::ensure!(
+        share.is_dir(),
+        "Shared path is not a directory: {}",
+        share.display()
+    );
+    let share = std::fs::canonicalize(share)
+        .with_context(|| format!("cannot resolve {}", share.display()))?;
+    let socket = dir.virtiofsd_socket();
+    let _ = std::fs::remove_file(&socket);
+
+    let mut cmd = Command::new("virtiofsd");
+    cmd.arg("--socket-path")
+        .arg(&socket)
+        .arg("--shared-dir")
+        .arg(&share)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit());
+    // SAFETY: prctl touches only the child's own process state.
+    unsafe {
+        cmd.pre_exec(|| {
+            libc::prctl(
+                libc::PR_SET_PDEATHSIG,
+                libc::SIGKILL as libc::c_ulong,
+                0,
+                0,
+                0,
+            );
+            Ok(())
+        });
+    }
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            bail!(
+                "virtiofsd not found — --share requires it \
+                 (see 'virt-linux doctor' for the package)"
+            );
+        }
+        Err(e) => return Err(e).context("cannot spawn virtiofsd"),
+    };
+
+    // The socket appearing means the daemon is ready to accept QEMU's
+    // vhost-user connection. A child that dies first is a config error.
+    for _ in 0..50 {
+        if socket.exists() {
+            return Ok(child);
+        }
+        if let Some(status) = child.try_wait()? {
+            bail!("virtiofsd exited during startup (status {status})");
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let _ = child.kill();
+    bail!("virtiofsd did not create its socket within 5s");
+}
+
+/// Stop a helper child (virtiofsd, remote-viewer): SIGTERM, then
+/// SIGKILL after a 2s grace.
+pub(crate) fn dismiss_child(child: &mut Child) {
+    let pid = child.id() as libc::pid_t;
+    unsafe { libc::kill(pid, libc::SIGTERM) };
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(_)) => return,
+            Ok(None) => std::thread::sleep(Duration::from_millis(100)),
+            Err(_) => return,
+        }
+    }
+    child.kill().ok();
+    let _ = child.wait();
+}
+
 /// The QMP socket appears milliseconds after the child spawns; retry
-/// briefly so a very early stop request isn't silently lost.
+/// only while the socket does not yet exist (early boot). Once it
+/// exists, a single attempt is made — bounded by the QMP read timeout,
+/// so a wedged guest cannot stall the stop ladder.
 pub(crate) fn connect_qmp_with_retry(dir: &VmDir) -> Option<Qmp> {
     for _ in 0..20 {
-        if let Ok(qmp) = Qmp::connect(&dir.qmp_socket()) {
-            return Some(qmp);
+        if dir.qmp_socket().exists() {
+            return Qmp::connect(&dir.qmp_socket()).ok();
         }
         std::thread::sleep(Duration::from_millis(100));
     }
@@ -199,7 +282,12 @@ pub(crate) fn finish_session(dir: &VmDir, exit: Option<i32>) {
     let _ = std::fs::remove_file(dir.pid_path());
     // QEMU unlinks its server sockets on clean exit, but not when
     // SIGKILLed — tidy them here so the VM dir reflects a stopped VM.
-    for sock in [dir.qmp_socket(), dir.qga_socket(), dir.spice_socket()] {
+    for sock in [
+        dir.qmp_socket(),
+        dir.qga_socket(),
+        dir.spice_socket(),
+        dir.virtiofsd_socket(),
+    ] {
         let _ = std::fs::remove_file(sock);
     }
     logger::log(dir, &format!("guest stopped (exit {})", exit.unwrap_or(-1)));
@@ -207,9 +295,14 @@ pub(crate) fn finish_session(dir: &VmDir, exit: Option<i32>) {
 }
 
 /// Headless supervision (`virt start`).
-pub fn run_headless(config: &VmConfig, dir: &VmDir) -> Result<()> {
+pub fn run_headless(config: &VmConfig, dir: &VmDir, share: Option<&Path>) -> Result<()> {
     let _tty = TtyGuard::capture();
     clean_stale_runtime_files(dir);
+
+    let mut vfsd = match share {
+        Some(share) => Some(spawn_virtiofsd(dir, share)?),
+        None => None,
+    };
 
     let boot = resolve_boot(dir, config)?;
     let spec = QemuSpec {
@@ -220,6 +313,7 @@ pub fn run_headless(config: &VmConfig, dir: &VmDir) -> Result<()> {
         boot,
         display: Display::Headless,
         iso: None,
+        share,
     };
     let argv = spec.argv();
 
@@ -254,19 +348,22 @@ pub fn run_headless(config: &VmConfig, dir: &VmDir) -> Result<()> {
     logger::log(dir, "started");
 
     let mut ladder = StopLadder::new();
-    loop {
+    let loop_result = loop {
         if let Some(status) = child.try_wait()? {
             eprintln!("VM stopped.");
             finish_session(dir, status.code());
-            break;
+            break Ok(());
         }
         if shutdown_requested() {
             ladder.request(dir);
         }
         ladder.tick(dir, &mut child);
         std::thread::sleep(Duration::from_millis(100));
+    };
+    if let Some(vfsd) = vfsd.as_mut() {
+        dismiss_child(vfsd);
     }
-    Ok(())
+    loop_result
 }
 
 /// Direct kernel boot marker for `virt start`'s banner (mirrors

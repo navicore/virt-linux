@@ -75,6 +75,11 @@ impl VmDir {
         self.root.join("qga.sock")
     }
 
+    /// virtiofsd vhost-user socket (the `--share` backend).
+    pub fn virtiofsd_socket(&self) -> PathBuf {
+        self.root.join("virtiofsd.sock")
+    }
+
     pub fn exists(&self) -> bool {
         self.root.is_dir()
     }

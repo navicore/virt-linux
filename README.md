@@ -7,12 +7,10 @@ surface, same per-VM on-disk model, same UX; where virt-macos embeds
 Apple's Virtualization.framework, this tool supervises a QEMU
 subprocess per VM.
 
-**Status: M3 complete.** `create`, `list`, `set`, `delete`,
-`completions`, `doctor`, `start`, `stop`, and `install` work — VMs
-boot headless (EFI or direct kernel) with the console in your
-terminal, and `install` opens a SPICE window (remote-viewer) for
-ISO-based OS installs. `kernel-import` fails with a pointer to the
-roadmap in
+**Status: M4 complete — full command surface.** `create`, `list`,
+`set`, `delete`, `completions`, `doctor`, `start`, `stop`, `install`,
+and `kernel-import` all work. Remaining roadmap items are
+enhancements (guest-agent IP column, hostfwd SSH, cluster docs) in
 [docs/design/001-architecture.md](docs/design/001-architecture.md).
 
 ## Dependencies
@@ -132,9 +130,59 @@ virt-linux stop myvm      # from any terminal: graceful ACPI shutdown,
 ```
 
 Boot mode is automatic: direct kernel when `kernel`+`initrd` are
-imported (M4), EFI/GRUB otherwise (OVMF NVRAM is seeded on first
-boot). A force-killed VM can never be orphaned — QEMU dies with its
+imported, EFI/GRUB otherwise (OVMF NVRAM is seeded on first boot). A
+force-killed VM can never be orphaned — QEMU dies with its
 supervisor under any kill, including SIGKILL.
+
+### Direct kernel boot (recommended)
+
+Skip EFI/GRUB for daily use: boot the guest kernel directly. Console
+output starts in ~1s and no GRUB configuration is needed.
+
+Copy the kernel out of the guest during a GUI session (Debian/Ubuntu
+provide stable `/vmlinuz` and `/initrd.img` symlinks):
+
+```
+virt-linux install myvm --share ~/vm-share
+# inside the guest:
+ mkdir -p /mnt/share
+ mount -t virtiofs share /mnt/share
+ cp -L /vmlinuz /initrd.img /mnt/share/
+```
+
+Then on the host:
+
+```
+virt-linux kernel-import myvm --from ~/vm-share
+```
+
+`virt-linux start` detects the kernel and boots it directly. On x86_64
+hosts bzImages import as-is; gzip/zboot arm64 wrappers are decompressed
+automatically (in-process, like virt-macos). If your root filesystem
+is not on `/dev/vda2`, pass `--root` (check with `lsblk` in the guest).
+After a kernel upgrade in the guest, repeat the copy + import.
+
+### Shared folders
+
+Share a host directory with the VM (`--share` works with both `start`
+and `install`; requires `virtiofsd` on the host):
+
+```
+virt-linux start myvm --share ~/code
+```
+
+Inside the VM, mount it:
+
+```
+mkdir -p /mnt/share
+mount -t virtiofs share /mnt/share
+```
+
+For persistent mounting, add to `/etc/fstab`:
+
+```
+share /mnt/share virtiofs defaults 0 0
+```
 
 `--version` reports the version. Shell completions:
 

@@ -10,6 +10,13 @@ use serde_json::{Value, json};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
+use std::time::Duration;
+
+/// Read/write timeout for QMP exchanges. A guest wedged during init
+/// (e.g. blocked on a vhost-user handshake) never answers QMP; without
+/// a timeout the supervisor's stop ladder would stall forever instead
+/// of escalating to SIGKILL at its deadline.
+const QMP_TIMEOUT: Duration = Duration::from_secs(3);
 
 pub struct Qmp {
     stream: UnixStream,
@@ -20,6 +27,12 @@ impl Qmp {
     pub fn connect(path: &Path) -> Result<Self> {
         let stream = UnixStream::connect(path)
             .with_context(|| format!("cannot connect QMP socket {}", path.display()))?;
+        stream
+            .set_read_timeout(Some(QMP_TIMEOUT))
+            .context("cannot set QMP read timeout")?;
+        stream
+            .set_write_timeout(Some(QMP_TIMEOUT))
+            .context("cannot set QMP write timeout")?;
         let mut qmp = Self {
             stream,
             buf: Vec::new(),

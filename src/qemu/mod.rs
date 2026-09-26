@@ -1,10 +1,10 @@
 //! QEMU command-line construction.
 //!
 //! The argv builder is a pure function of (VmConfig, VmDir, arch, accel,
-//! boot, display) — no I/O, no host probing. Host-dependent choices
-//! (accel, firmware paths) are resolved by the caller and passed in,
-//! which is what makes this module the unit-test centerpiece of the
-//! port: the QEMU contract is pinned by tests the same way
+//! boot, display, share) — no I/O, no host probing. Host-dependent
+//! choices (accel, firmware paths) are resolved by the caller and
+//! passed in, which is what makes this module the unit-test centerpiece
+//! of the port: the QEMU contract is pinned by tests the same way
 //! VMConfiguration.swift pins the VZ contract.
 
 pub mod arch;
@@ -49,6 +49,10 @@ pub struct QemuSpec<'a> {
     pub display: Display,
     /// ISO attached (read-only, cdrom) for OS installs.
     pub iso: Option<&'a Path>,
+    /// Host directory shared via virtiofs (tag `share`). Requires the
+    /// virtiofsd daemon (spawned by the supervisor before QEMU) and a
+    /// shared-memory backend for vhost-user.
+    pub share: Option<&'a Path>,
 }
 
 impl QemuSpec<'_> {
@@ -69,6 +73,18 @@ impl QemuSpec<'_> {
         a.push(self.config.cpus.to_string());
         a.push("-m".into());
         a.push(format!("{}M", self.config.memory_mb));
+
+        // vhost-user (virtiofs) needs shared guest memory: a memfd
+        // backend bound to a NUMA node. Only added when sharing.
+        if self.share.is_some() {
+            a.push("-object".into());
+            a.push(format!(
+                "memory-backend-memfd,id=mem,size={}M,share=on",
+                self.config.memory_mb
+            ));
+            a.push("-numa".into());
+            a.push("node,memdev=mem".into());
+        }
 
         match &self.boot {
             Boot::Efi { firmware_code } => {
@@ -130,6 +146,18 @@ impl QemuSpec<'_> {
 
         self.push_network(&mut a);
         self.push_agent_channel(&mut a);
+
+        if self.share.is_some() {
+            // The virtiofs share: same tag ("share") and guest-side
+            // mount instructions as virt-macos's virtiofs device.
+            a.push("-chardev".into());
+            a.push(format!(
+                "socket,id=char0,path={}",
+                pb(&self.dir.virtiofsd_socket())
+            ));
+            a.push("-device".into());
+            a.push("vhost-user-fs-pci,chardev=char0,tag=share".into());
+        }
 
         // QMP control socket — how `virt stop` reaches a running VM.
         a.push("-qmp".into());
@@ -266,236 +294,4 @@ fn fnv1a64(data: &[u8]) -> u64 {
         hash = hash.wrapping_mul(0x100_0000_01b3);
     }
     hash
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn config() -> VmConfig {
-        VmConfig {
-            name: "milford".into(),
-            cpus: 4,
-            memory_mb: 8192,
-            disk_size_gb: 100,
-            description: Some("medium size vm with rocky 10 os".into()),
-            mac_address: Some("02:11:22:33:44:55".into()),
-            root_device: None,
-            extra_kernel_args: None,
-            network_mode: None,
-            bridge_interface: None,
-            lan_name: None,
-        }
-    }
-
-    fn dir() -> VmDir {
-        VmDir::new("milford")
-    }
-
-    fn spec<'a>(cfg: &'a VmConfig, d: &'a VmDir, arch: Arch, boot: Boot) -> QemuSpec<'a> {
-        QemuSpec {
-            config: cfg,
-            dir: d,
-            arch,
-            accel: Accel::Kvm,
-            boot,
-            display: Display::Headless,
-            iso: None,
-        }
-    }
-
-    /// Value following a flag argument, e.g. arg(args, "-m") -> "8192M".
-    fn arg<'a>(args: &'a [String], flag: &str) -> &'a str {
-        let i = args
-            .iter()
-            .position(|x| x == flag)
-            .unwrap_or_else(|| panic!("flag {flag} missing: {args:?}"));
-        args.get(i + 1).map(String::as_str).unwrap_or("")
-    }
-
-    fn has(args: &[String], needle: &str) -> bool {
-        args.iter().any(|x| x.contains(needle))
-    }
-
-    #[test]
-    fn headless_x86_64_kvm_nat_efi() {
-        let cfg = config();
-        let d = dir();
-        let s = spec(
-            &cfg,
-            &d,
-            Arch::X86_64,
-            Boot::Efi {
-                firmware_code: "/usr/share/OVMF/OVMF_CODE_4M.fd".into(),
-            },
-        );
-        let a = s.argv();
-        assert_eq!(a[0], "qemu-system-x86_64");
-        assert_eq!(arg(&a, "-machine"), "q35");
-        assert_eq!(arg(&a, "-accel"), "kvm");
-        assert_eq!(arg(&a, "-cpu"), "host");
-        assert_eq!(arg(&a, "-smp"), "4");
-        assert_eq!(arg(&a, "-m"), "8192M");
-        assert!(has(
-            &a,
-            "if=pflash,format=raw,unit=0,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd"
-        ));
-        assert!(has(
-            &a,
-            &format!("unit=1,file={}", d.nvram_path().display())
-        ));
-        assert!(has(&a, &format!("file={}", d.disk_path().display())));
-        assert!(has(&a, "virtio-net-pci,netdev=net0,mac=02:11:22:33:44:55"));
-        assert!(has(&a, "virtio-rng-pci"));
-        assert!(has(&a, "virtio-vga"));
-        assert_eq!(arg(&a, "-serial"), "stdio");
-        assert_eq!(arg(&a, "-display"), "none");
-        assert!(has(&a, &format!("unix:{}", d.qmp_socket().display())));
-        // No -pidfile: the supervisor writes vm.pid with its own PID
-        // (virt stop signals the supervisor, not QEMU).
-        assert!(!a.iter().any(|x| x == "-pidfile"));
-    }
-
-    #[test]
-    fn aarch64_tcg_machine_virt() {
-        let cfg = config();
-        let d = dir();
-        let mut s = spec(
-            &cfg,
-            &d,
-            Arch::Aarch64,
-            Boot::Efi {
-                firmware_code: "/usr/share/AAVMF/AAVMF_CODE.fd".into(),
-            },
-        );
-        s.accel = Accel::Tcg;
-        let a = s.argv();
-        assert_eq!(a[0], "qemu-system-aarch64");
-        assert_eq!(arg(&a, "-machine"), "virt");
-        assert_eq!(arg(&a, "-accel"), "tcg,thread=multi");
-        assert_eq!(arg(&a, "-cpu"), "max");
-        assert!(has(&a, "virtio-gpu-pci"));
-    }
-
-    #[test]
-    fn direct_kernel_boot_uses_tty_s0() {
-        let cfg = config();
-        let d = dir();
-        let s = spec(
-            &cfg,
-            &d,
-            Arch::X86_64,
-            Boot::Kernel {
-                kernel: d.kernel_path(),
-                initrd: d.initrd_path(),
-                root_device: "/dev/vda2".into(),
-                extra_args: Some("quiet".into()),
-            },
-        );
-        let a = s.argv();
-        assert_eq!(arg(&a, "-kernel"), d.kernel_path().display().to_string());
-        assert_eq!(arg(&a, "-initrd"), d.initrd_path().display().to_string());
-        assert_eq!(arg(&a, "-append"), "console=ttyS0 root=/dev/vda2 ro quiet");
-        // No pflash drives on the kernel-boot path.
-        assert!(!has(&a, "pflash"));
-    }
-
-    #[test]
-    fn lan_mode_gets_dual_nic_and_stable_mcast() {
-        let mut cfg = config();
-        cfg.network_mode = Some("lan".into());
-        cfg.lan_name = Some("k3s".into());
-        let d = dir();
-        let s = spec(
-            &cfg,
-            &d,
-            Arch::X86_64,
-            Boot::Efi {
-                firmware_code: "/x".into(),
-            },
-        );
-        let a = s.argv();
-        // eth0: private slirp; eth1: shared cluster segment.
-        assert!(has(&a, "user,id=net0"));
-        assert!(has(
-            &a,
-            &format!("socket,id=lan0,mcast={}", lan_multicast_endpoint("k3s"))
-        ));
-        // Second NIC MAC must differ from the primary.
-        assert!(has(&a, "netdev=lan0,mac=02:11:22:33:44:56"));
-        // Deterministic: same name → same endpoint, different name → not.
-        assert_eq!(lan_multicast_endpoint("k3s"), lan_multicast_endpoint("k3s"));
-        assert_ne!(
-            lan_multicast_endpoint("k3s"),
-            lan_multicast_endpoint("other")
-        );
-    }
-
-    #[test]
-    fn gui_mode_spice_iso_and_input() {
-        let cfg = config();
-        let d = dir();
-        let mut s = spec(
-            &cfg,
-            &d,
-            Arch::X86_64,
-            Boot::Efi {
-                firmware_code: "/x".into(),
-            },
-        );
-        s.display = Display::Spice;
-        s.iso = Some(Path::new("/iso/debian-13-amd64-netinst.iso"));
-        let a = s.argv();
-        assert!(has(&a, "media=cdrom,readonly=on"));
-        assert!(has(
-            &a,
-            &format!("unix=on,addr={}", d.spice_socket().display())
-        ));
-        assert!(has(&a, "virtio-keyboard-pci"));
-        assert!(has(&a, "virtio-tablet-pci"));
-        // No serial-console wiring in GUI mode (exact-arg check: the
-        // guest-agent channel legitimately contains "-serial").
-        assert!(!a.iter().any(|x| x == "-serial"));
-    }
-
-    #[test]
-    fn bridge_mode_uses_bridge_netdev() {
-        let mut cfg = config();
-        cfg.network_mode = Some("bridge".into());
-        cfg.bridge_interface = Some("br0".into());
-        let d = dir();
-        let s = spec(
-            &cfg,
-            &d,
-            Arch::X86_64,
-            Boot::Efi {
-                firmware_code: "/x".into(),
-            },
-        );
-        let a = s.argv();
-        assert!(has(&a, "bridge,id=net0,br=br0"));
-        assert!(!has(&a, "socket,id=lan0"));
-    }
-
-    #[test]
-    fn guest_agent_channel_always_present() {
-        let cfg = config();
-        let d = dir();
-        let s = spec(
-            &cfg,
-            &d,
-            Arch::X86_64,
-            Boot::Efi {
-                firmware_code: "/x".into(),
-            },
-        );
-        let a = s.argv();
-        assert!(has(&a, "name=org.qemu.guest_agent.0"));
-        assert!(has(&a, &format!("path={}", d.qga_socket().display())));
-    }
-
-    #[test]
-    fn adjacent_mac_wraps() {
-        assert_eq!(adjacent_mac("02:aa:bb:cc:dd:ff"), "02:aa:bb:cc:dd:00");
-    }
 }

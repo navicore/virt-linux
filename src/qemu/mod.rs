@@ -176,7 +176,14 @@ impl QemuSpec<'_> {
             }
             Display::Spice => {
                 a.push("-spice".into());
-                a.push(format!("unix=on,addr={}", pb(&self.dir.spice_socket())));
+                // disable-ticketing: QEMU challenges clients by default,
+                // and with no password set the challenge can never be
+                // answered. The socket is already private to the VM dir
+                // (filesystem permissions), so no auth is needed.
+                a.push(format!(
+                    "unix=on,addr={},disable-ticketing",
+                    pb(&self.dir.spice_socket())
+                ));
                 // HID for the install window (arch-uniform virtio input).
                 a.push("-device".into());
                 a.push("virtio-keyboard-pci".into());

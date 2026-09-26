@@ -111,7 +111,10 @@ virt-macos). `virt doctor` reports what is actually installed.
   memory + vhost-user-fs, daemon supervised with PDEATHSIG, socket
   readiness wait, clean error when virtiofsd is missing)
 - **M5** — guest-agent-backed IP column in `virt list`, hostfwd SSH
-  port allocation, cluster docs (k3s walkthrough)
+  port allocation, cluster docs (k3s walkthrough), and `virt
+  console-enable <vm>`: perform the one-time guest serial-console
+  setup (grubby or grub.cfg edit) automatically over the guest-agent
+  channel, so the last manual step of a fresh install disappears
 
 ## Open questions
 

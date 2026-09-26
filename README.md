@@ -118,6 +118,28 @@ cap, then forced — closing mid-install is a power cut). When the guest
 powers off from inside (install finished), the session ends and the
 viewer is dismissed.
 
+### First boot after install
+
+`virt start` on a freshly installed VM is **silent by design** on the
+EFI path: the guest's kernel logs to the VGA device, which headless
+mode does not display, and distro installers don't add
+`console=ttyS0` by default. The VM is running — check `virt list`.
+Two permanent fixes:
+
+- **Enable the serial console in the guest** — boot the GUI once and,
+  in the guest, run
+  `grubby --update-kernel=ALL --args="console=ttyS0"`
+  (RHEL/Rocky/Fedora; on Debian/Ubuntu add `console=ttyS0` to every
+  `linux` line in `/boot/grub/grub.cfg`). systemd auto-spawns a getty
+  on any `console=` device. This is the fix — one time, and the
+  distro keeps managing kernels, GRUB, and upgrades exactly as it
+  would on hardware.
+- **Direct kernel boot (niche)** — a host-side kernel copy for when
+  you need host-controlled kernel args or sub-second console on
+  throwaway VMs. It pins the kernel at import time and must be
+  re-imported after every guest kernel upgrade; see the section
+  below.
+
 **Clipboard sharing** between the host and the Linux guest works in
 the install window once the SPICE agent runs in the guest:
 
@@ -139,7 +161,7 @@ imported, EFI/GRUB otherwise (OVMF NVRAM is seeded on first boot). A
 force-killed VM can never be orphaned — QEMU dies with its
 supervisor under any kill, including SIGKILL.
 
-### Direct kernel boot (recommended)
+### Direct kernel boot (niche — host-side kernel copy)
 
 Skip EFI/GRUB for daily use: boot the guest kernel directly. Console
 output starts in ~1s and no GRUB configuration is needed.
@@ -165,7 +187,14 @@ virt kernel-import myvm --from ~/vm-share
 hosts bzImages import as-is; gzip/zboot arm64 wrappers are decompressed
 automatically (in-process, like virt-macos). If your root filesystem
 is not on `/dev/vda2`, pass `--root` (check with `lsblk` in the guest).
-After a kernel upgrade in the guest, repeat the copy + import.
+
+**This boots a host-side copy of the guest's kernel**, not the guest's
+own boot selection: after every kernel upgrade in the guest you must
+repeat the copy + import, or you keep booting the old kernel. EFI is
+the normal path — use this only when you specifically want a
+host-controlled kernel command line (debugging, CI throwaways) or
+virt-macos workflow parity. To return a VM to the EFI path:
+`rm ~/.virt/vms/<name>/kernel initrd`.
 
 ### Shared folders
 

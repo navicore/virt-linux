@@ -11,6 +11,7 @@ pub mod commands;
 pub mod config;
 pub mod installer;
 pub mod iso;
+pub mod kernel;
 pub mod lock;
 pub mod logger;
 pub mod mac;

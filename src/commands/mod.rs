@@ -5,11 +5,11 @@ pub mod create;
 pub mod delete;
 pub mod doctor;
 pub mod install;
+pub mod kernel_import;
 pub mod list;
 pub mod set;
 pub mod start;
 pub mod stop;
-pub mod stubs;
 
 use crate::cli::Command;
 use anyhow::Result;
@@ -24,9 +24,7 @@ pub fn run(command: Command) -> Result<()> {
         Command::List => list::run(),
         Command::Set(args) => set::run(&args),
         Command::Doctor => doctor::run(),
-        Command::KernelImport(args) => {
-            stubs::kernel_import(&args.name, &args.from, args.root.as_deref())
-        }
+        Command::KernelImport(args) => kernel_import::run(&args),
         Command::Completions(args) => completions::run(&args.shell),
     }
 }

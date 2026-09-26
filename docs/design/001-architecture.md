@@ -105,8 +105,11 @@ virt-macos). `virt doctor` reports what is actually installed.
   detection (ISOCheck port incl. multi-arch and stray-text handling),
   window-close → graceful shutdown semantics (InstallerApp parity),
   viewer dies with supervisor (PDEATHSIG SIGTERM)
-- **M4** — `virt kernel-import` (gzip decompression like virt-macos),
-  direct kernel boot, `--share` via virtiofsd
+- **M4 (done)** — `virt kernel-import` (in-process gzip decompression
+  for zboot kernels; bzImages import as-is on x86_64), direct kernel
+  boot live-validated, `--share` via virtiofsd (memfd/NUMA shared
+  memory + vhost-user-fs, daemon supervised with PDEATHSIG, socket
+  readiness wait, clean error when virtiofsd is missing)
 - **M5** — guest-agent-backed IP column in `virt list`, hostfwd SSH
   port allocation, cluster docs (k3s walkthrough)
 

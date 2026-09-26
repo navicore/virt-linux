@@ -27,7 +27,7 @@ subprocess per VM.
 ## Build
 
 ```
-cargo build
+just build
 ```
 
 ## CI

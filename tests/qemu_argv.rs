@@ -21,6 +21,8 @@ fn config() -> VmConfig {
         network_mode: None,
         bridge_interface: None,
         lan_name: None,
+        firmware: None,
+        console_enabled: None,
     }
 }
 
@@ -136,6 +138,58 @@ fn direct_kernel_boot_uses_tty_s0() {
     assert!(!has(&a, "pflash"));
 }
 
+/// BIOS boot: SeaBIOS default firmware, no pflash drives.
+#[test]
+fn bios_boot_skips_pflash() {
+    let cfg = config();
+    let d = dir();
+    let s = spec(&cfg, &d, Arch::X86_64, Boot::Bios);
+    let a = s.argv();
+    assert!(!has(&a, "pflash"));
+    assert!(!has(&a, &d.nvram_path().display().to_string()));
+    // Everything else is still present.
+    assert!(has(&a, &format!("file={}", d.disk_path().display())));
+    assert_eq!(arg(&a, "-serial"), "stdio");
+}
+
+/// Installer direct boot: kernel/initrd/append from isoboot plus
+/// -no-reboot so the end-of-install reset ends the session instead of
+/// looping back into the installer.
+#[test]
+fn installer_boot_exits_on_guest_reset() {
+    let cfg = config();
+    let d = dir();
+    let s = QemuSpec {
+        config: &cfg,
+        dir: &d,
+        arch: Arch::X86_64,
+        accel: Accel::Kvm,
+        boot: Boot::Installer {
+            kernel: d.installer_kernel(),
+            initrd: d.installer_initrd(),
+            append:
+                "console=ttyS0 console=tty0 inst.graphical inst.noreboot inst.stage2=hd:LABEL=X"
+                    .into(),
+        },
+        display: Display::Spice,
+        iso: Some(Path::new("/iso/rocky.iso")),
+        share: None,
+    };
+    let a = s.argv();
+    assert_eq!(
+        arg(&a, "-kernel"),
+        d.installer_kernel().display().to_string()
+    );
+    assert_eq!(
+        arg(&a, "-initrd"),
+        d.installer_initrd().display().to_string()
+    );
+    assert!(arg(&a, "-append").contains("console=ttyS0"));
+    assert!(a.iter().any(|x| x == "-no-reboot"));
+    // The installer's install source stays attached.
+    assert!(has(&a, "media=cdrom,readonly=on"));
+}
+
 #[test]
 fn lan_mode_gets_dual_nic_and_stable_mcast() {
     let mut cfg = config();
@@ -175,6 +229,9 @@ fn gui_mode_spice_iso_and_input() {
     s.iso = Some(Path::new("/iso/debian-13-amd64-netinst.iso"));
     let a = s.argv();
     assert!(has(&a, "media=cdrom,readonly=on"));
+    // Installer sessions exit on guest reset instead of re-firing.
+    // (Exercised via Boot::Installer in the direct-boot test below.)
+    assert!(!a.iter().any(|x| x == "-no-reboot"));
     assert!(has(
         &a,
         &format!(
@@ -182,11 +239,16 @@ fn gui_mode_spice_iso_and_input() {
             d.spice_socket().display()
         )
     ));
+    // GUI sessions capture the serial port for debugging silent installs.
+    assert!(has(
+        &a,
+        &format!("file,id=serlog,path={}", d.serial_log().display())
+    ));
+    assert_eq!(arg(&a, "-serial"), "chardev:serlog");
     assert!(has(&a, "virtio-keyboard-pci"));
     assert!(has(&a, "virtio-tablet-pci"));
-    // No serial-console wiring in GUI mode (exact-arg check: the
-    // guest-agent channel legitimately contains "-serial").
-    assert!(!a.iter().any(|x| x == "-serial"));
+    // Serial in GUI mode is captured to the log chardev, not stdio.
+    assert_eq!(arg(&a, "-serial"), "chardev:serlog");
 }
 
 #[test]

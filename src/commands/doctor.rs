@@ -14,6 +14,8 @@ struct PkgNames {
     firmware: [&'static str; 2],
     virt_viewer: &'static str,
     virtiofsd: &'static str,
+    bsdtar: &'static str,
+    libguestfs: &'static str,
 }
 
 fn detect_pkgs() -> PkgNames {
@@ -30,6 +32,8 @@ fn detect_pkgs() -> PkgNames {
             firmware: ["ovmf", "qemu-efi-aarch64"],
             virt_viewer: "virt-viewer",
             virtiofsd: "virtiofsd",
+            bsdtar: "libarchive-tools",
+            libguestfs: "libguestfs-tools",
         }
     } else if id.contains("fedora") {
         PkgNames {
@@ -38,6 +42,8 @@ fn detect_pkgs() -> PkgNames {
             firmware: ["edk2-ovmf", "edk2-aarch64"],
             virt_viewer: "virt-viewer",
             virtiofsd: "virtiofsd",
+            bsdtar: "libarchive",
+            libguestfs: "libguestfs-tools",
         }
     } else if id.contains("arch") {
         PkgNames {
@@ -46,6 +52,8 @@ fn detect_pkgs() -> PkgNames {
             firmware: ["edk2-ovmf", "edk2-aarch64"],
             virt_viewer: "virt-viewer",
             virtiofsd: "virtiofsd",
+            bsdtar: "libarchive",
+            libguestfs: "libguestfs-tools",
         }
     } else {
         PkgNames {
@@ -54,6 +62,8 @@ fn detect_pkgs() -> PkgNames {
             firmware: ["edk2-ovmf", "edk2-aarch64"],
             virt_viewer: "virt-viewer",
             virtiofsd: "virtiofsd",
+            bsdtar: "libarchive",
+            libguestfs: "libguestfs-tools",
         }
     }
 }
@@ -68,6 +78,8 @@ pub fn run() -> Result<()> {
     check_firmware(host, &pkgs);
     check_virtiofsd(&pkgs);
     check_remote_viewer(&pkgs);
+    check_bsdtar(&pkgs);
+    check_libguestfs(&pkgs);
     check_vms();
     Ok(())
 }
@@ -209,5 +221,46 @@ impl std::fmt::Display for Arch {
             Arch::Aarch64 => "aarch64",
         };
         write!(f, "{s}")
+    }
+}
+
+fn check_bsdtar(pkgs: &PkgNames) {
+    match find_in_path("bsdtar") {
+        Some(path) => println!(
+            "bsdtar:       ok ({}) - installer console injection supported",
+            path.display()
+        ),
+        None => println!(
+            "bsdtar:       not installed - {} {} (without it, installs need manual console setup)",
+            pkgs.manager, pkgs.bsdtar
+        ),
+    }
+}
+
+fn check_libguestfs(pkgs: &PkgNames) {
+    match find_in_path("virt-customize") {
+        Some(path) => {
+            println!(
+                "libguestfs:   ok ({}) - offline console-enable supported",
+                path.display()
+            );
+            // supermin must read a host kernel to build the appliance.
+            let Ok(entries) = std::fs::read_dir("/boot") else {
+                return;
+            };
+            let readable = entries.flatten().any(|e| {
+                e.file_name().to_string_lossy().starts_with("vmlinuz")
+                    && std::fs::File::open(e.path()).is_ok()
+            });
+            if !readable {
+                println!(
+                    "              /boot/vmlinuz-* not readable — fix: sudo chmod a+r /boot/vmlinuz-*"
+                );
+            }
+        }
+        None => println!(
+            "libguestfs:   not installed - {} {} (without it, first boot needs manual console setup)",
+            pkgs.manager, pkgs.libguestfs
+        ),
     }
 }

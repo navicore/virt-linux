@@ -7,12 +7,14 @@
 //! viewer is dismissed.
 
 use crate::config::VmConfig;
+use crate::isoboot::InstallerBoot;
 use crate::logger;
 use crate::qemu::arch::{Accel, Arch};
-use crate::qemu::{Display, QemuSpec};
+use crate::qemu::{Boot, Display, QemuSpec};
 use crate::supervisor::{
-    StopLadder, clean_stale_runtime_files, dismiss_child, finish_session, install_signal_handlers,
-    resolve_efi_boot, shutdown_requested, spawn_qemu, spawn_virtiofsd,
+    Firmware, StopLadder, clean_stale_runtime_files, dismiss_child, finish_session,
+    install_signal_handlers, resolve_efi_boot, resolve_firmware, shutdown_requested, spawn_qemu,
+    spawn_virtiofsd,
 };
 use crate::vmdir::VmDir;
 use anyhow::{Context, Result, bail};
@@ -27,6 +29,7 @@ pub fn run_gui(
     iso: Option<&Path>,
     viewer: bool,
     share: Option<&Path>,
+    installer_boot: Option<InstallerBoot>,
 ) -> Result<()> {
     clean_stale_runtime_files(dir);
 
@@ -36,8 +39,23 @@ pub fn run_gui(
     };
 
     // Installs (and GUI re-entry) always use real EFI — installers
-    // and GRUB need firmware, mirroring virt-macos's Install.
-    let boot = resolve_efi_boot(dir, Arch::host())?;
+    // and GRUB need firmware, mirroring virt-macos's Install —
+    // EXCEPT when isoboot extracted the installer kernel: then we
+    // boot the installer directly with console=ttyS0 injected, which
+    // the installer persists into the installed system's bootloader.
+    let boot = match installer_boot {
+        Some(boot) => Boot::Installer {
+            kernel: boot.kernel,
+            initrd: boot.initrd,
+            append: boot.append,
+        },
+        // GUI re-entry of an installed system: honor the VM's
+        // firmware (isoboot installs are BIOS installs).
+        None => match resolve_firmware(dir, config) {
+            Firmware::Bios => Boot::Bios,
+            Firmware::Efi => resolve_efi_boot(dir, Arch::host())?,
+        },
+    };
     let spec = QemuSpec {
         config,
         dir,

@@ -1,6 +1,7 @@
 //! Command dispatch.
 
 pub mod completions;
+pub mod console_enable;
 pub mod create;
 pub mod delete;
 pub mod doctor;
@@ -24,6 +25,7 @@ pub fn run(command: Command) -> Result<()> {
         Command::List => list::run(),
         Command::Set(args) => set::run(&args),
         Command::Doctor => doctor::run(),
+        Command::ConsoleEnable(args) => console_enable::run(&args.name),
         Command::KernelImport(args) => kernel_import::run(&args),
         Command::Completions(args) => completions::run(&args.shell),
     }

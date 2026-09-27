@@ -39,6 +39,11 @@ pub enum Command {
     /// Diagnose host setup (KVM, QEMU, firmware)
     Doctor,
 
+    /// Enable the guest serial console by editing its bootloader
+    /// offline (requires libguestfs-tools; VM must be stopped)
+    #[command(name = "console-enable")]
+    ConsoleEnable(ConsoleEnable),
+
     /// Import guest kernel for direct boot
     #[command(name = "kernel-import")]
     KernelImport(KernelImport),
@@ -149,6 +154,12 @@ pub struct KernelImport {
     /// Extra kernel command-line arguments
     #[arg(long)]
     pub kernel_args: Option<String>,
+}
+
+#[derive(clap::Args)]
+pub struct ConsoleEnable {
+    /// Name of the VM
+    pub name: String,
 }
 
 #[derive(clap::Args)]

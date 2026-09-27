@@ -28,6 +28,18 @@ pub enum Boot {
         root_device: String,
         extra_args: Option<String>,
     },
+    /// SeaBIOS legacy boot (GRUB in the MBR) — how isoboot-installed
+    /// VMs boot: the installer ran under SeaBIOS (QEMU's -kernel path),
+    /// so it wrote a BIOS bootloader instead of an ESP.
+    Bios,
+    /// An ISO installer booted directly with a host-built command
+    /// line (isoboot) — how `virt install` injects `console=ttyS0`
+    /// so the installed system comes out console-ready.
+    Installer {
+        kernel: PathBuf,
+        initrd: PathBuf,
+        append: String,
+    },
 }
 
 /// Headless (`virt start`) vs GUI install window (`virt install`).
@@ -119,6 +131,28 @@ impl QemuSpec<'_> {
                 a.push("-append".into());
                 a.push(cmdline);
             }
+            Boot::Bios => {
+                // SeaBIOS is the q35 default firmware — no pflash
+                // drives. GRUB in the MBR takes it from here.
+            }
+            Boot::Installer {
+                kernel,
+                initrd,
+                append,
+            } => {
+                a.push("-kernel".into());
+                a.push(pb(kernel));
+                a.push("-initrd".into());
+                a.push(pb(initrd));
+                a.push("-append".into());
+                a.push(append.clone());
+                // The guest's end-of-install reboot must not re-fire
+                // this installer kernel — QEMU exits on guest reset,
+                // ending the session; the next `virt start` boots the
+                // installed disk through EFI. (libvirt's --noreboot
+                // uses the same mechanism.)
+                a.push("-no-reboot".into());
+            }
         }
 
         // Main disk: raw image on virtio-blk.
@@ -184,6 +218,17 @@ impl QemuSpec<'_> {
                     "unix=on,addr={},disable-ticketing",
                     pb(&self.dir.spice_socket())
                 ));
+                // Capture the serial port in GUI sessions: installers
+                // told to use serial (or their early boot messages)
+                // land here instead of a discarded pipe — invaluable
+                // for debugging a silent install.
+                a.push("-chardev".into());
+                a.push(format!(
+                    "file,id=serlog,path={}",
+                    pb(&self.dir.serial_log())
+                ));
+                a.push("-serial".into());
+                a.push("chardev:serlog".into());
                 // HID for the install window (arch-uniform virtio input).
                 a.push("-device".into());
                 a.push("virtio-keyboard-pci".into());

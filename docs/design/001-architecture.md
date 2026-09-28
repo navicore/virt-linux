@@ -116,6 +116,11 @@ virt-macos). `virt doctor` reports what is actually installed.
   setup (grubby or grub.cfg edit) automatically over the guest-agent
   channel, so the last manual step of a fresh install disappears
 
+- **Templates** — `virt clone`: full sparse-copy clone with fresh MAC
+  and virt-sysprep identity reset (machine-id, host keys, hostname).
+  Possible future: linked clones (qcow2 backing files) for
+  instant/space-sharing clones
+
 ## Open questions
 
 - qcow2 vs raw for the main disk (raw chosen for parity; qcow2 buys

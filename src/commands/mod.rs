@@ -1,5 +1,6 @@
 //! Command dispatch.
 
+pub mod clone;
 pub mod completions;
 pub mod console_enable;
 pub mod create;
@@ -18,6 +19,7 @@ use anyhow::Result;
 pub fn run(command: Command) -> Result<()> {
     match command {
         Command::Create(args) => create::run(&args),
+        Command::Clone(args) => clone::run(&args),
         Command::Install(args) => install::run(&args),
         Command::Start(args) => start::run(&args),
         Command::Stop(args) => stop::run(&args),

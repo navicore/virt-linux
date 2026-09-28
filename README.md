@@ -2,7 +2,8 @@
 
 A CLI tool for managing Linux VMs on Linux hosts (x86_64 and aarch64)
 via QEMU/KVM. Rust sibling of
-[virt-macos](https://git.navicore.tech/navicore/virt-macos) — same command
+[virt-macos](https://git.navicore.tech/navicore/virt-macos)
+([GitHub mirror](https://github.com/navicore/virt-macos)) — same command
 surface, same per-VM on-disk model, same UX; where virt-macos embeds
 Apple's Virtualization.framework, this tool supervises a QEMU
 subprocess per VM.
@@ -17,6 +18,14 @@ disks, kernels, and configs move between the two with plain copies.
 and `kernel-import` all work. Remaining roadmap items are
 enhancements (guest-agent IP column, hostfwd SSH, cluster docs) in
 [docs/design/001-architecture.md](docs/design/001-architecture.md).
+
+## Source and mirrors
+
+The home of this project is my Forgejo:
+**[git.navicore.tech/navicore/virt-linux](https://git.navicore.tech/navicore/virt-linux)** —
+the canonical source of truth for code and releases. It is mirrored to
+**[github.com/navicore/virt-linux](https://github.com/navicore/virt-linux)**; issues,
+pull requests, and forks are welcome on the GitHub mirror.
 
 ## Dependencies
 

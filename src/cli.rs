@@ -18,6 +18,9 @@ pub enum Command {
     /// Create a new VM
     Create(Create),
 
+    /// Clone a stopped VM under a new name (fresh MAC and guest identity)
+    Clone(Clone),
+
     /// Boot VM with a GUI window for OS install
     Install(Install),
 
@@ -81,6 +84,23 @@ pub struct Create {
     /// Host bridge for bridge mode
     #[arg(long)]
     pub bridge_interface: Option<String>,
+}
+
+#[derive(clap::Args)]
+pub struct Clone {
+    /// Name of the VM to clone (must be stopped)
+    pub source: String,
+
+    /// Name for the new VM
+    pub new_name: String,
+
+    /// Description for the clone (default: "clone of <source>")
+    #[arg(long)]
+    pub description: Option<String>,
+
+    /// Skip guest identity reset (keeps template machine-id/host keys)
+    #[arg(long)]
+    pub no_sysprep: bool,
 }
 
 #[derive(clap::Args)]

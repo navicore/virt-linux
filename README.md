@@ -161,6 +161,29 @@ apt install spice-vdagent
 systemctl enable --now spice-vdagentd
 ```
 
+### Clone a VM (templates)
+
+Keep a fully configured VM stopped — GUI installed, console enabled,
+agents installed — and clone it for each new instance:
+
+```
+virt clone testrocky-i k3s-node1
+virt clone testrocky-i k3s-node2
+```
+
+A clone copies the disk (sparse), the EFI store, and the config under
+a new name with a **fresh MAC**; `virt-sysprep` (libguestfs) resets
+guest identity — machine-id, SSH host keys, and hostname set to the
+new VM name. That identity reset matters for clusters: k3s keys nodes
+off machine-id, and un-sysprep'd clones are one node wearing three
+hats. Clones inherit network mode, so cloning a `lan:k3s` VM is the
+fast path to a node set. `--no-sysprep` skips the reset (speed over
+uniqueness); `--description` overrides the default `clone of <src>`.
+
+The template VM stays exactly as-is. Clones are independent full
+copies — a few seconds and roughly the template's *used* space each
+(instant, space-sharing linked clones are a possible future feature).
+
 ### Start and stop
 
 ```
